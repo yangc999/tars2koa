@@ -2,7 +2,7 @@
 
 ## 原理
 
-
+利用kong作为Tars网关,Tars.js将外部HTTP调用转为内部RPC调用.同时利用kong的eureka插件自动将eureka上注册的node节点更新到网关中,完成自动化部署.
 
 ## 部署
 
