@@ -1,0 +1,23 @@
+module JsDemo
+{
+    struct HelloReq
+    {
+        0 optional int id = 0;
+    };
+
+    struct HelloResp
+    {
+        0 optional int code = 0;
+        1 optional string msg = "";
+    };
+
+    interface DemoCall
+    {
+        int hello(HelloReq req, out HelloResp resp);
+    };
+
+    interface DemoRc
+    {
+        int greet(HelloReq req, out HelloResp resp);
+    };
+};
