@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 )
 
 //GenKoa record go code information.
@@ -93,22 +94,153 @@ module.exports = life
 	gen.saveToSourceFile("life.js")
 }
 
+func (gen *GenKoa) toTypeName(ty *VarType) string {
+	ret := ""
+	switch ty.Type {
+	case tkTBool:
+		ret = "Stream.Boolean"
+	case tkTInt:
+		ret = "Stream.String"
+	case tkTShort:
+		ret = "Stream.String"
+	case tkTByte:
+		ret = "Stream.String"
+	case tkTLong:
+		ret = "Stream.Int64"
+	case tkTFloat:
+		ret = "Stream.Float"
+	case tkTDouble:
+		ret = "Stream.Double"
+	case tkTString:
+		ret = "Stream.String"
+	case tkTVector:
+		ret = "Stream.List"
+		ret += "("
+		ret += gen.toTypeName(ty.TypeK)
+		ret += ")"
+	case tkTMap:
+		ret = "Stream.Map"
+		ret += "("
+		ret += gen.toTypeName(ty.TypeK)
+		ret += ", "
+		ret += gen.toTypeName(ty.TypeV)
+		ret += ")"
+	case tkName:
+		vec := strings.Split(ty.TypeSt, "::")
+		ret = gen.p.Module + "." + strings.Join(vec, ".")
+	default:
+		gen.genErr("Unknow Type " + TokenMap[ty.Type])
+	}
+	return ret
+}
+
+func (gen *GenKoa) toArgumentName(arg *ArgInfo) string {
+	ret := ""
+	switch arg.Type.Type {
+	case tkTBool:
+	case tkTInt:
+	case tkTShort:
+	case tkTByte:
+	case tkTLong:
+	case tkTFloat:
+	case tkTDouble:
+	case tkTString:
+		ret = "\"" + arg.Name + "\""
+	case tkTVector:
+		ret = "\"" + arg.Name + "\""
+		ret += ", "
+		ret += gen.toTypeName(arg.Type)
+	case tkTMap:
+		ret = "\"" + arg.Name + "\""
+		ret += ", "
+		ret += gen.toTypeName(arg.Type)
+	case tkName:
+		ret = "\"" + arg.Name + "\""
+		ret += ", "
+		ret += gen.toTypeName(arg.Type)
+	default:
+		gen.genErr("Unknow Type " + TokenMap[arg.Type.Type])
+	}
+	return ret
+}
+
+func (gen *GenKoa) toFunctionName(ty *VarType) string {
+	ret := ""
+	switch ty.Type {
+	case tkTBool:
+		ret = "Boolean"
+	case tkTInt:
+		if ty.Unsigned {
+			ret = "UInt32"
+		} else {
+			ret = "Int32"
+		}
+	case tkTShort:
+		if ty.Unsigned {
+			ret = "UInt16"
+		} else {
+			ret = "Int16"
+		}
+	case tkTByte:
+		if ty.Unsigned {
+			ret = "UInt8"
+		} else {
+			ret = "Int8"
+		}
+	case tkTLong:
+		if ty.Unsigned {
+			ret = "UInt64"
+		} else {
+			ret = "Int64"
+		}
+	case tkTFloat:
+		ret = "Float"
+	case tkTDouble:
+		ret = "Double"
+	case tkTString:
+		ret = "String"
+	case tkTVector:
+		ret = "List"
+	case tkTMap:
+		ret = "Map"
+	case tkName:
+		ret = "Struct"
+	default:
+		gen.genErr("Unknow Type " + TokenMap[ty.Type])
+	}
+	return ret
+}
+
+func (gen *GenKoa) toReadFunctionName(arg *ArgInfo) string {
+	tp := gen.toFunctionName(arg.Type)
+	return "read" + tp + "(" + gen.toArgumentName(arg) + ")"
+}
+
+func (gen *GenKoa) toWriteFunctionName(arg *ArgInfo) string {
+	tp := gen.toFunctionName(arg.Type)
+	return "write" + tp + "(\"" + arg.Name + "\", " + arg.Name + ")"
+}
+
 func (gen *GenKoa) genRouter() {
 	gen.code.Reset()
 	c := &gen.code
 	c.WriteString("\n\"use strict\";\n\n")
 	c.WriteString("var Stream = require(\"@tars/stream\");")
 	c.WriteString("var Client = require(\"@tars/rpc\").client;\n")
-	c.WriteString("var " + gen.p.Module + " = require(\"./" + gen.p.Source + "Proxy\")." + gen.p.Module + ";\n")
+	head := strings.LastIndex(gen.p.Source, "/")
+	tail := strings.LastIndex(gen.p.Source, ".tars")
+	fileName := gen.p.Source[head+1 : tail]
+	c.WriteString("var " + gen.p.Module + " = require(\"" + fileName + "Proxy\")." + gen.p.Module + ";\n")
 	c.WriteString("const router = require(\"koa-router\")();\n")
 	for _, i := range gen.p.Interface {
 		c.WriteString("var prx_" + i.TName + " = Client.stringToProxy(" + gen.p.Module + "." + i.TName + "Proxy, );\n")
 		c.WriteString("router.post(\"/" + i.TName + "\", async (ctx, next) => {\n")
 		c.WriteString("\t" + "try {\n")
 		c.WriteString("\t\t" + "var tup_decode = new Stream.Tup();\n")
+		c.WriteString("\t\t" + "var tup_encode = new Stream.Tup();\n")
 		c.WriteString("\t\t" + "tup_decode.decode(new Tars.BinBuffer(ctx.request.body));\n")
 		c.WriteString("\t\t" + "var method = tup_decode.readString(\"method\");\n")
-		c.WriteString("\t\t" + "swsitch (method) {\n")
+		c.WriteString("\t\t" + "switch (method) {\n")
 		for _, f := range i.Fun {
 			c.WriteString("\t\t" + "case \"" + f.Name + "\":\n")
 			inputArgs := ""
@@ -120,13 +252,14 @@ func (gen *GenKoa) genRouter() {
 						inputArgs += ", "
 						inputArgs += a.Name
 					}
+					c.WriteString("\t\t\t" + "var " + a.Name + " = tup_decode." + gen.toReadFunctionName(&a) + ";\n")
 				}
-				c.WriteString("\t\t\t" + "var " + a.Name + ";\n")
 			}
 			c.WriteString("\t\t\t" + "let result = await prx_" + i.TName + "." + f.Name + "(" + inputArgs + ");\n")
 			for _, a := range f.Args {
 				if a.IsOut {
-					c.WriteString("\t\t\t" + "result.response.arguments;\n")
+					c.WriteString("\t\t\t" + "var " + a.Name + " = " + "result.response.arguments." + a.Name + ";\n")
+					c.WriteString("\t\t\t" + "tup_encode." + gen.toWriteFunctionName(&a) + ";\n")
 				}
 			}
 			c.WriteString("\t\t\t" + "break;\n")
@@ -135,11 +268,12 @@ func (gen *GenKoa) genRouter() {
 		c.WriteString("\t\t\t" + "console.log(\"error method:\", method);\n")
 		c.WriteString("\t\t\t" + "throw \"err method\";\n")
 		c.WriteString("\t\t" + "}\n")
+		c.WriteString("\t\t" + "var BinBuffer = tup_encode.encode(true);\n")
+		c.WriteString("\t\t" + "ctx.response.body = BinBuffer.toNodeBuffer();\n")
 		c.WriteString("\t" + "} catch (err) {\n")
 		c.WriteString("\t\t" + "console.log(\"error:\" + err);\n")
 		c.WriteString("\t\t" + "ctx.response.status = 500;\n")
-		c.WriteString("\t\t" + "ctx.response.body = \"\";\n")
-		c.WriteString("\t" + "}")
+		c.WriteString("\t" + "}\n")
 		c.WriteString("});\n")
 	}
 	c.WriteString("module.exports = router")
