@@ -2,11 +2,17 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
 )
+
+var gHost = flag.String("H", "127.0.0.1", "TarsServerHost")
+var gPort = flag.String("P", "12000", "TarsServerPort")
+var gThread = flag.String("T", "100", "TarsClientThread")
+var gServerName = flag.String("N", "TestObj", "TarsServerObjName")
 
 //GenKoa record go code information.
 type GenKoa struct {
@@ -44,6 +50,20 @@ func (gen *GenKoa) saveToSourceFile(filename string) {
 			gen.genErr(err.Error())
 		}
 	}
+}
+
+func (gen *GenKoa) toTarsPath() string {
+	ret := ""
+	ret += *gServerName
+	ret += "@"
+	ret += "tcp"
+	ret += " -h "
+	ret += *gHost
+	ret += " -p "
+	ret += *gPort
+	ret += " -t "
+	ret += *gThread
+	return ret
 }
 
 func (gen *GenKoa) genEureka() {
@@ -233,7 +253,7 @@ func (gen *GenKoa) genRouter() {
 	c.WriteString("var " + gen.p.Module + " = require(\"" + fileName + "Proxy\")." + gen.p.Module + ";\n")
 	c.WriteString("const router = require(\"koa-router\")();\n")
 	for _, i := range gen.p.Interface {
-		c.WriteString("var prx_" + i.TName + " = Client.stringToProxy(" + gen.p.Module + "." + i.TName + "Proxy, );\n")
+		c.WriteString("var prx_" + i.TName + " = Client.stringToProxy(" + gen.p.Module + "." + i.TName + "Proxy, \"" + gen.toTarsPath() + "\");\n")
 		c.WriteString("router.post(\"/" + i.TName + "\", async (ctx, next) => {\n")
 		c.WriteString("\t" + "try {\n")
 		c.WriteString("\t\t" + "var tup_decode = new Stream.Tup();\n")
